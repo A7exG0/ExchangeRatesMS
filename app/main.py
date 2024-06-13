@@ -1,15 +1,19 @@
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
 import requests
-from datetime import datetime
 import binascii
 import json
+import logging
+from datetime import datetime, timedelta
 
 app = FastAPI()
 
 cached_data = {}
 
-def load_rates(date):
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def load_rates(date: str):
     global cached_data
 
     # Проверка формата даты
@@ -17,6 +21,8 @@ def load_rates(date):
         datetime.strptime(date, '%Y-%m-%d')
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    logger.info(f"\tLoading exchange rates for date: {date}")
 
     # Проверка, загружены ли курсы валют за данную дату
     if date in cached_data: 
@@ -68,11 +74,26 @@ def check(date: str):
 
     return make_responce(response_body)
 
+def calculate_rate_change(date_str: str, rate):
+
+    date = datetime.strptime(date_str, "%Y-%m-%d")
+    previous_date = date - timedelta(days=1)
+    previous_date_str = previous_date.strftime("%Y-%m-%d")
+
+    data_previous_date = load_rates(previous_date_str)
+
+    for previous_rate in data_previous_date:
+        if str(rate["Cur_ID"]) == str(previous_rate["Cur_ID"]):
+            return rate["Cur_OfficialRate"] - previous_rate["Cur_OfficialRate"]
+        
+    return "Not found"
+
 @app.get("/get_rate")
 def get_rate(date: str, code: str):
     data = load_rates(date)
     for rate in data:
         if str(rate["Cur_ID"]) == code:
+            rate['change'] = calculate_rate_change(date, rate)
             return make_responce(rate)
         
     raise HTTPException(status_code=404, detail="Code not found")

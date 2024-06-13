@@ -4,9 +4,7 @@ from datetime import datetime
 
 app = FastAPI()
 
-@app.get("/check")
-def check(date: str):
-    
+def load_rates(date):
     # Проверка формата даты
     try:
         datetime.strptime(date, '%Y-%m-%d')
@@ -23,11 +21,27 @@ def check(date: str):
         # Проверка наличия данных
         if not data:
             raise HTTPException(status_code=404, detail="No data available for the given date.")
+        
+        return data
 
-        return {
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+@app.get("/check")
+def check(date: str):
+    load_rates(date)
+
+    return {
             "date": date,
             "status": "Success",
             "message": "Exchange rates loaded successfully."
         }
-    except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+@app.get("/get_rate")
+def get_rate(date: str, code: str):
+    data = load_rates(date)
+
+    for rate in data:
+        if str(rate["Cur_ID"]) == code:
+            return rate
+    raise HTTPException(status_code=404, detail="Code not found")

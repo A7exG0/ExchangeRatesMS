@@ -7,12 +7,20 @@ import json
 
 app = FastAPI()
 
+cached_data = {}
+
 def load_rates(date):
+    global cached_data
+
     # Проверка формата даты
     try:
         datetime.strptime(date, '%Y-%m-%d')
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    # Проверка, загружены ли курсы валют за данную дату
+    if date in cached_data: 
+        return cached_data[date]
 
     url = f"https://www.nbrb.by/api/exrates/rates?ondate={date}&periodicity=0"
     
@@ -21,10 +29,13 @@ def load_rates(date):
         response.raise_for_status()  # Проверка статуса ответа
         data = response.json()
 
-        # Проверка наличия данных
+        # Проверка наличия данных в ответе
         if not data:
             raise HTTPException(status_code=404, detail="No data available for the given date.")
         
+        # Добавление в память нового значения курсов валют
+        cached_data[date] = data
+
         return data
 
     except requests.RequestException as e:

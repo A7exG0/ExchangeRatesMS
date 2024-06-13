@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import JSONResponse
 import requests
 import binascii
 import json
@@ -14,6 +13,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def load_rates(date: str):
+    """
+    Возвращает курсы валют по указанной дате. При отсутствии данных по указанной дате, дополнительно сохраняет эти
+    данные в кэш. 
+    """
     global cached_data
 
     # Проверка формата даты
@@ -48,12 +51,16 @@ def load_rates(date: str):
         raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
 
 def make_responce(body: dict):
-    # Вычисление CRC32
+    """
+    Создает ответ. Добавляет заголовок CRC32.
+    """
+    
     body_json = json.dumps(body, ensure_ascii=False)
     body_bytes = body_json.encode('utf-8')
+
+    # Вычисление CRC32
     body_crc = binascii.crc32(body_bytes) & 0xffffffff
 
-    # Создание объекта Response
     response = Response(content=body_json, media_type="application/json; charset=utf-8")
     
     # Добавление заголовка CRC32
@@ -61,21 +68,10 @@ def make_responce(body: dict):
 
     return response
 
-@app.get("/check")
-def check(date: str):
-    data = load_rates(date)
-
-    response_body = {
-            "date": date,
-            "status": "Success",
-            "message": "Exchange rates loaded successfully.",
-            "data": data
-        }
-
-    return make_responce(response_body)
-
 def calculate_rate_change(date_str: str, rate):
-
+    """
+    Высчитывает разницу курсов валют по выбранной дате и предыдущей. 
+    """
     date = datetime.strptime(date_str, "%Y-%m-%d")
     previous_date = date - timedelta(days=1)
     previous_date_str = previous_date.strftime("%Y-%m-%d")
@@ -88,8 +84,29 @@ def calculate_rate_change(date_str: str, rate):
         
     return "Not found"
 
+@app.get("/check")
+def check(date: str):
+    """
+    Первый endpoint по условию. Получает курсы валют банка по указанной дате.
+    Отображает сообщение о статусе выполнения.
+    """
+    data = load_rates(date)
+
+    response_body = {
+            "date": date,
+            "status": "Success",
+            "message": "Exchange rates loaded successfully.",
+            "data": data
+        }
+
+    return make_responce(response_body)
+
 @app.get("/get_rate")
 def get_rate(date: str, code: str):
+    """
+    Второй endpoint по условию. Возвращает курсы валют по указанной дате и по указанному коду валют.
+    Дополнительно выводит разницу между курсами данной даты и предыдущей. 
+    """
     data = load_rates(date)
     for rate in data:
         if str(rate["Cur_ID"]) == code:
@@ -97,3 +114,4 @@ def get_rate(date: str, code: str):
             return make_responce(rate)
         
     raise HTTPException(status_code=404, detail="Code not found")
+    

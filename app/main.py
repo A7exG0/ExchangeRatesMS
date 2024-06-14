@@ -23,12 +23,14 @@ def load_rates(date: str):
     try:
         datetime.strptime(date, '%Y-%m-%d')
     except ValueError:
+        logger.error(f"Invalid date format: {date}")
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    logger.info(f"\tLoading exchange rates for date: {date}")
+    logger.info(f"Loading exchange rates for date: {date}")
 
     # Проверка, загружены ли курсы валют за данную дату
     if date in cached_data: 
+        logger.info(f"Rates for date {date} found in cache")
         return cached_data[date]
 
     url = f"https://www.nbrb.by/api/exrates/rates?ondate={date}&periodicity=0"
@@ -40,14 +42,17 @@ def load_rates(date: str):
 
         # Проверка наличия данных в ответе
         if not data:
+            logger.warning(f"No data available for date: {date}")
             raise HTTPException(status_code=404, detail="No data available for the given date.")
         
         # Добавление в память нового значения курсов валют
         cached_data[date] = data
+        logger.info(f"Rates for date {date} loaded and cached")
 
         return data
 
     except requests.RequestException as e:
+        logger.error(f"Error loading data for date {date}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
 
 def make_responce(body: dict):
@@ -76,12 +81,17 @@ def calculate_rate_change(date_str: str, rate):
     previous_date = date - timedelta(days=1)
     previous_date_str = previous_date.strftime("%Y-%m-%d")
 
+    logger.info(f"Calculating rate change for date: {date_str} and previous date: {previous_date_str}")
+
     data_previous_date = load_rates(previous_date_str)
 
     for previous_rate in data_previous_date:
         if str(rate["Cur_ID"]) == str(previous_rate["Cur_ID"]):
-            return rate["Cur_OfficialRate"] - previous_rate["Cur_OfficialRate"]
-        
+            change = round(rate["Cur_OfficialRate"] - previous_rate["Cur_OfficialRate"], 4)
+            logger.info(f"Rate change calculated: {change}")
+            return change
+    
+    logger.warning(f"Previous rate not found for Cur_ID: {rate['Cur_ID']}")
     return "Not found"
 
 @app.get("/check")
@@ -90,6 +100,7 @@ def check(date: str):
     Первый endpoint по условию. Получает курсы валют банка по указанной дате.
     Отображает сообщение о статусе выполнения.
     """
+    logger.info(f"Endpoint /check called with date: {date}")
     data = load_rates(date)
 
     response_body = {
@@ -107,11 +118,14 @@ def get_rate(date: str, code: str):
     Второй endpoint по условию. Возвращает курсы валют по указанной дате и по указанному коду валют.
     Дополнительно выводит разницу между курсами данной даты и предыдущей. 
     """
+    logger.info(f"Endpoint /get_rate called with date: {date} and code: {code}")
     data = load_rates(date)
     for rate in data:
         if str(rate["Cur_ID"]) == code:
             rate['change'] = calculate_rate_change(date, rate)
+            logger.info(f"Rate found for code {code}: {rate}")
             return make_responce(rate)
-        
+    
+    logger.warning(f"Rate not found for code: {code}")
     raise HTTPException(status_code=404, detail="Code not found")
     
